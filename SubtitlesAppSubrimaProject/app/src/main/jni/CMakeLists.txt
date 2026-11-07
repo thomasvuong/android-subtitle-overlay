@@ -36,5 +36,6 @@ endif()
 # Adds subdirectories for building the whisper.cpp and sentencepiece libraries.
 # These subprojects are treated as part of the overall build and will be
 # compiled along with the native_transcription project.
-add_subdirectory(whisper)
-add_subdirectory(sentencepiece)
+# Local build: whisper.cpp (needs ../whisper_cpp) and sentencepiece are optional
+# and not used by the Vosk path, so they are disabled here to keep the build
+# self-contained. WhisperLib loads "whisper" lazily only in smart-correction mode.

@@ -15,13 +15,13 @@
         - Margins: 24dp start/end, 36dp bottom
         - Padding: 12dp inside the subtitle box
         - Background: subtitle_background drawable (custom rounded or shaded background)
-        - Text color: white (#FFF)
-        - Text size: 18sp, auto-scaling enabled
-        - Max lines: 2, ellipsize at end for overflow
+        - Text color: white (#FFFFFF) on a near-opaque black box (high contrast)
+        - Text size: 30sp default, auto-scaling enabled (large text for hearing-impaired users)
+        - Max lines: 3, ellipsize at end for overflow
         - Line spacing: 2dp extra
         - Break strategy: simple (for consistent line breaks)
         - Hyphenation frequency: none (prevents word splitting)
-        - Auto-size text: uniform scaling between 12sp and 24sp, step granularity 2sp
+        - Auto-size text: uniform scaling between 22sp and 32sp, step granularity 2sp
         - Text alignment and gravity:
             • Gravity: center_vertical
             • Text alignment: gravity
@@ -37,18 +37,18 @@
         android:layout_marginEnd="24dp"
         android:layout_marginBottom="36dp"
         android:padding="12dp"
-        android:maxLines="2"
+        android:maxLines="3"
         android:ellipsize="end"
         android:background="@drawable/subtitle_background"
-        android:textColor="#FFF"
-        android:textSize="18sp"
+        android:textColor="#FFFFFF"
+        android:textSize="30sp"
         android:includeFontPadding="false"
         android:lineSpacingExtra="2dp"
         android:breakStrategy="simple"
         android:hyphenationFrequency="none"
         android:autoSizeTextType="uniform"
-        android:autoSizeMinTextSize="12sp"
-        android:autoSizeMaxTextSize="24sp"
+        android:autoSizeMinTextSize="22sp"
+        android:autoSizeMaxTextSize="32sp"
         android:autoSizeStepGranularity="2sp"
 
         android:gravity="center_vertical"

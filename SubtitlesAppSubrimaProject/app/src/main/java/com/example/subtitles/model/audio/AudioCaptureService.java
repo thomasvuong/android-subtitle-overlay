@@ -48,20 +48,37 @@ public class AudioCaptureService extends Service {
         createNotificationChannel();
         // Initialize the singleton audio capturer with the sample rate from transcriptManager
         capturer = StreamAudioCapturer.getInstance(this, transcriptManager.sampleRate);
-        // Build the foreground notification
+        // startForeground() happens in onStartCommand(): its type depends on the audio source.
+    }
+
+    /**
+     * Enters the foreground with the type matching the audio source:
+     * microphone (no MediaProjection consent) or mediaProjection (playback capture).
+     *
+     * @return false if the system refused (missing permission / not allowed from background)
+     */
+    private boolean enterForeground(boolean mic) {
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("Audio Capture Running")
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
-        // Start the service in the foreground to avoid being killed by the system
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
-        } else {
-            startForeground(1, notification);
+        try {
+            if (!mic) {
+                startForeground(1, notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                startForeground(1, notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+            } else {
+                // API 29: no microphone service type constant, use the manifest types
+                startForeground(1, notification);
+            }
+            return true;
+        } catch (RuntimeException e) {
+            Log.e("AudioCaptureService", "startForeground refused, mic=" + mic, e);
+            return false;
         }
-
     }
 
     /**
@@ -76,8 +93,22 @@ public class AudioCaptureService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d("AudioCaptureService", "onStartCommand(), startId=" + startId + ", flags=" + flags + ", intent=" + intent);
+        final boolean mic = StreamAudioCapturer.isMicMode(this);
+        // Must run promptly after startForegroundService(); also re-run on restart to change type
+        if (!enterForeground(mic)) {
+            LocalBroadcastManager.getInstance(this).sendBroadcast(
+                    new Intent("com.example.subtitles.ACTION_SERVICE_READY").putExtra("ok", false));
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         if (intent == null) {
             Log.e("AudioCaptureService", "Received null intent in onStartCommand");
+            return START_NOT_STICKY;
+        }
+        if (mic) {
+            // Microphone mode: no MediaProjection grant is needed or used
+            LocalBroadcastManager.getInstance(this)
+                    .sendBroadcast(new Intent("com.example.subtitles.ACTION_SERVICE_READY"));
             return START_NOT_STICKY;
         }
 

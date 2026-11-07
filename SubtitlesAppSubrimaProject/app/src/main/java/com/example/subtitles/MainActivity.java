@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
@@ -29,6 +30,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AlertDialog;
 
 import com.example.subtitles.model.audio.AudioCaptureService;
+import com.example.subtitles.model.audio.StreamAudioCapturer;
 import com.example.subtitles.util.AssetUtils;
 import com.example.subtitles.view.overlay.FloatingToggleButtonService;
 import com.example.subtitles.view.overlay.SubtitleOverlayService;
@@ -81,6 +83,9 @@ public class MainActivity extends AppCompatActivity {
     /// Indicates if background services are initialized and ready
     private boolean serviceIsReady = false;
 
+    /// Audio source (mic or playback) the capture service was last started with; null = never
+    private Boolean serviceMicMode = null;
+
     /// Tracks if FloatingToggleButtonService listener has been registered
     private boolean secListenerRegistered = false;
 
@@ -102,12 +107,17 @@ public class MainActivity extends AppCompatActivity {
         public void onReceive(Context context, Intent intent) {
             if ("com.example.subtitles.ACTION_SERVICE_READY".equals(intent.getAction())) {
                 Log.d(TAG, "Received ACTION_SERVICE_READY broadcast");
-                serviceIsReady = true;
+                final boolean serviceOk = intent.getBooleanExtra("ok", true);
+                serviceIsReady = serviceOk;
                 logUiState("serviceReadyReceiver:onReceive");
 
                 runOnUiThread(() -> {
-                    // If overlay and screen capture permissions are granted and secondary button not shown, start it
-                    if (!showSec && hasProjectionPermission() && Settings.canDrawOverlays(MainActivity.this)) {
+                    if (!serviceOk) {
+                        Toast.makeText(MainActivity.this,
+                                "Could not start audio capture", Toast.LENGTH_LONG).show();
+                    }
+                    // If overlay and (screen capture permission or mic mode) are OK and secondary button not shown, start it
+                    if (serviceOk && !showSec && hasProjectionPermission() && Settings.canDrawOverlays(MainActivity.this)) {
                         Log.d(TAG, "Service ready and permissions OK, starting transcription");
                         synchronized (lock) {
                             startSecoundryButton(projectionResultCode, projectionData);
@@ -159,6 +169,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        applyDefaultPrefs();
         // Initialize UI components
         mainButton = findViewById(R.id.toggleMainButton);
         // Initialize MediaProjectionManager for screen capture requests
@@ -208,7 +219,7 @@ public class MainActivity extends AppCompatActivity {
                     Log.d(TAG, "overlayPermissionLauncher result received, canDrawOverlays="
                             + Settings.canDrawOverlays(this));
                     if (Settings.canDrawOverlays(this)) {
-                        requestScreenCapturePermission();
+                        continueAfterOverlayPermission();
                     } else {
                         Toast.makeText(this, "Overlay permission denied", Toast.LENGTH_SHORT).show();
                         resetTranscriptionButton();
@@ -387,7 +398,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        if (!serviceIsReady) {
+        if (!serviceIsReady || serviceMicMode == null
+                || serviceMicMode != StreamAudioCapturer.isMicMode(this)) {
             Log.d(TAG, "Permissions are ready but AudioCaptureService is not ready yet, starting service");
             startAudioCaptureService("beginSubtitleStartupFlow");
             return;
@@ -414,18 +426,47 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            Log.d(TAG, "Overlay permission already granted, requesting screen capture");
-            requestScreenCapturePermission();
+            Log.d(TAG, "Overlay permission already granted, continuing");
+            continueAfterOverlayPermission();
         } else {
             Toast.makeText(this, "Requires Android 10+", Toast.LENGTH_SHORT).show();
             resetTranscriptionButton();
         }
     }
     /**
-     * Checks if we have valid screen capture permission
+     * Checks if the capture precondition is met: always true in mic mode
+     * (no screen-capture consent needed), otherwise a valid MediaProjection grant.
      */
     private boolean hasProjectionPermission() {
+        if (StreamAudioCapturer.isMicMode(this)) return true;
         return projectionData != null && projectionResultCode == Activity.RESULT_OK;
+    }
+
+    /**
+     * Next step once overlay permission is granted: mic mode starts the capture
+     * service directly, playback mode asks for screen-capture consent first.
+     */
+    private void continueAfterOverlayPermission() {
+        if (StreamAudioCapturer.isMicMode(this)) {
+            startAudioCaptureService("overlayGranted(mic)");
+        } else {
+            requestScreenCapturePermission();
+        }
+    }
+
+    /**
+     * Writes first-run defaults for the hard-of-hearing Vietnamese use case.
+     * Only keys that are still unset are written; existing choices are kept.
+     */
+    private void applyDefaultPrefs() {
+        SharedPreferences prefs = getSharedPreferences("subrima_prefs", MODE_PRIVATE);
+        SharedPreferences.Editor ed = prefs.edit();
+        if (!prefs.contains(StreamAudioCapturer.PREF_AUDIO_SOURCE))
+            ed.putString(StreamAudioCapturer.PREF_AUDIO_SOURCE, StreamAudioCapturer.SOURCE_MIC);
+        if (!prefs.contains("pref_source_lang")) ed.putString("pref_source_lang", "vi");
+        if (!prefs.contains("pref_subtitle_lang")) ed.putString("pref_subtitle_lang", "vi");
+        if (!prefs.contains("pref_smart_correction")) ed.putBoolean("pref_smart_correction", false);
+        ed.apply();
     }
     /**
      * Requests screen capture permission via MediaProjectionManager
@@ -447,6 +488,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         serviceIsReady = false;
+        serviceMicMode = StreamAudioCapturer.isMicMode(this);
         Intent serviceIntent = new Intent(this, AudioCaptureService.class);
         serviceIntent.putExtra("PROJECTION_CODE", projectionResultCode);
         serviceIntent.putExtra("PROJECTION_DATA", projectionData);

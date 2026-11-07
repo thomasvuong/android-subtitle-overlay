@@ -1,5 +1,5 @@
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#66000000" /> 
+    <solid android:color="#E6000000" /> 
     <stroke android:width="1dp" android:color="#FFFFFF" /> 
     <corners android:radius="16dp" />
 </shape>
@@ -8,6 +8,7 @@
     <!--
     Hex opacity levels:
     #80000000 = 50%
+    #E6000000 = 90% (current, high contrast)
     #66000000 = 40%
     #4D000000 = 30%
     #33000000 = 20%

@@ -1,13 +1,16 @@
 package com.example.subtitles.model.audio;
 
+import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioPlaybackCaptureConfiguration;
 import android.media.AudioPlaybackConfiguration;
 import android.media.AudioRecord;
+import android.media.MediaRecorder;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
@@ -16,6 +19,7 @@ import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.RequiresApi;
+import androidx.core.content.ContextCompat;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -42,6 +46,13 @@ public class StreamAudioCapturer {
     /** Duration of one audio chunk in milliseconds */
     public static final int chunkSizeMs = 250;
     private static final String TAG = "StreamAudioCapturer";
+    /** SharedPreferences file and key selecting the audio source */
+    public static final String PREFS_NAME = "subrima_prefs";
+    public static final String PREF_AUDIO_SOURCE = "pref_audio_source";
+    /** Microphone (default): hears the room and speakerphone, needs no screen-capture consent */
+    public static final String SOURCE_MIC = "mic";
+    /** Playback capture via MediaProjection (media/game audio of other apps) */
+    public static final String SOURCE_PLAYBACK = "playback";
     /** Singleton instance */
     private static StreamAudioCapturer instance;
     private final Context context;
@@ -69,6 +80,8 @@ public class StreamAudioCapturer {
     private OnAudioCaptureListener listener;
     /** Background thread reading audio */
     private Thread captureThread;
+    /** True when the running capture uses the microphone path */
+    private volatile boolean activeMicMode = false;
 
     /**
      * Private constructor for singleton.
@@ -136,6 +149,13 @@ public class StreamAudioCapturer {
         }
     }
     /**
+     * Returns true unless the user explicitly chose the playback source.
+     */
+    public static boolean isMicMode(Context ctx) {
+        return !SOURCE_PLAYBACK.equals(ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(PREF_AUDIO_SOURCE, SOURCE_MIC));
+    }
+    /**
      * Registers listener for audio callbacks.
      */
     public void setOnAudioCaptureListener(OnAudioCaptureListener l) {
@@ -185,6 +205,12 @@ public class StreamAudioCapturer {
     @RequiresApi(api = Build.VERSION_CODES.Q)
     public boolean start() {
         if (capturing.get()) return false;
+        final boolean mic = isMicMode(context);
+        if (mic && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "RECORD_AUDIO not granted, cannot start microphone capture");
+            return false;
+        }
 
         synchronized (lock) {
             try {
@@ -202,34 +228,42 @@ public class StreamAudioCapturer {
                 int desiredBufBytes = chunkSize * 2; // short = 2 bytes
                 int bufSizeBytes = Math.max(minBufBytes, desiredBufBytes);
 
-                AudioPlaybackCaptureConfiguration.Builder configBuilder =
-                        new AudioPlaybackCaptureConfiguration.Builder(projection);
+                if (mic) {
+                    // Microphone path: no MediaProjection needed
+                    recorder = new AudioRecord.Builder()
+                            .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+                            .setAudioFormat(format)
+                            .setBufferSizeInBytes(bufSizeBytes)
+                            .build();
+                } else {
+                    AudioPlaybackCaptureConfiguration.Builder configBuilder =
+                            new AudioPlaybackCaptureConfiguration.Builder(projection);
 
-                int[] usages = new int[]{
-                        AudioAttributes.USAGE_MEDIA,
-                        AudioAttributes.USAGE_GAME,
-                        AudioAttributes.USAGE_UNKNOWN,
-                        AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
-                        AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
-                        AudioAttributes.USAGE_ASSISTANT
-                };
+                    int[] usages = new int[]{
+                            AudioAttributes.USAGE_MEDIA,
+                            AudioAttributes.USAGE_GAME,
+                            AudioAttributes.USAGE_UNKNOWN,
+                            AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
+                            AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE,
+                            AudioAttributes.USAGE_ASSISTANT
+                    };
 
-                for (int usage : usages) {
-                    try {
-                        configBuilder.addMatchingUsage(usage);
-                    } catch (IllegalArgumentException e) {
-                        Log.w(TAG, "Invalid usage: " + usage);
+                    for (int usage : usages) {
+                        try {
+                            configBuilder.addMatchingUsage(usage);
+                        } catch (IllegalArgumentException e) {
+                            Log.w(TAG, "Invalid usage: " + usage);
+                        }
                     }
+
+                    recorder = new AudioRecord.Builder()
+                            .setAudioFormat(format)
+                            .setBufferSizeInBytes(bufSizeBytes)
+                            .setAudioPlaybackCaptureConfig(
+                                    configBuilder
+                                            .build())
+                            .build();
                 }
-
-
-                recorder = new AudioRecord.Builder()
-                        .setAudioFormat(format)
-                        .setBufferSizeInBytes(bufSizeBytes)
-                        .setAudioPlaybackCaptureConfig(
-                                configBuilder
-                                        .build())
-                        .build();
 
                 if (recorder.getState() != AudioRecord.STATE_INITIALIZED) {
                     Log.d(TAG, "Recorder state after build(): " + recorder.getState()
@@ -240,11 +274,14 @@ public class StreamAudioCapturer {
                     return false;
                 }
                 recorder.startRecording();
+                activeMicMode = mic;
                 capturing.set(true);
-                audioManager.registerAudioPlaybackCallback(playbackCallback, main);
+                if (!mic) {
+                    audioManager.registerAudioPlaybackCallback(playbackCallback, main);
+                }
                 captureThread = new Thread(this::captureLoop, "AudioCaptureThread");
                 captureThread.start();
-                Log.i(TAG, "Audio capture started");
+                Log.i(TAG, "Audio capture started, source=" + (mic ? SOURCE_MIC : SOURCE_PLAYBACK));
                 return true;
             } catch (SecurityException e) {
                 Log.e(TAG, "Permission error when starting capture", e);
@@ -261,8 +298,10 @@ public class StreamAudioCapturer {
     private void captureLoop() {
         Log.d(TAG, "Entering capture loop with capturing=" + capturing.get());
         short[] buffer = new short[chunkSize];
+        final AudioRecord rec = recorder; // stop() nulls the field while this thread may still run
+        if (rec == null) return;
         while (capturing.get() && !Thread.currentThread().isInterrupted()) {
-            int read = recorder.read(buffer, 0, buffer.length);
+            int read = rec.read(buffer, 0, buffer.length);
             boolean errorRead = false;
             if (read == AudioRecord.ERROR_INVALID_OPERATION) {
                 Log.e(TAG, "ERROR_INVALID_OPERATION on read() — illegal state or permission dropped");
@@ -291,7 +330,9 @@ public class StreamAudioCapturer {
     public void stop(boolean midCaptureing) {
         // if we were NOT capturing, nothing to do
         if (!capturing.getAndSet(false)) return;
-        audioManager.unregisterAudioPlaybackCallback(playbackCallback);
+        if (!activeMicMode) {
+            audioManager.unregisterAudioPlaybackCallback(playbackCallback);
+        }
         synchronized (lock) {
             stopedMidCapturing.set(midCaptureing);
             if (recorder != null) {

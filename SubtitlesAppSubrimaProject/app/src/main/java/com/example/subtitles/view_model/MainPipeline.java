@@ -303,7 +303,8 @@ public class MainPipeline {
         setParmeters();
         boolean started = transcriber.start();
         if (started) {
-            if (translator != null) {
+            // No translation needed (same language) -> do not load ML Kit models
+            if (translator != null && !srcLang.equals(subtitleLang)) {
                 translator.resume(new MlKitTranslator.ReadyListener() {
                     @Override
                     public void onReady() {
@@ -381,6 +382,11 @@ public class MainPipeline {
      */
     public boolean setLanguage(String newDstLang) {
         try {
+            if (srcLang.equals(newDstLang)) {
+                // Same language: nothing to translate, avoid ML Kit model (re)load/download
+                subtitleLang = newDstLang;
+                return true;
+            }
             if (translator != null) {
                 Log.d(TAG, "Requesting to switch translation language to: " + srcLang + "->" + newDstLang);
                 boolean success = translator.setLanguages(srcLang, newDstLang);

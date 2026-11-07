@@ -19,6 +19,9 @@
     <!-- Grants access to device microphone for live audio capture -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Allows the microphone capture foreground service (mic subtitle mode, no screen-capture consent) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
     <!-- Allows media playback to run in foreground services -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
@@ -96,12 +99,12 @@
             *******************************************************************
             Foreground service responsible for capturing live audio from the device
             microphone. Not exported to prevent external access.
-            - Foreground service type: mediaProjection and mediaPlayback.
+            - Foreground service type: microphone (mic mode) or mediaProjection (playback mode).
         -->
         <service
             android:name=".model.audio.AudioCaptureService"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection|mediaPlayback" />
+            android:foregroundServiceType="microphone|mediaProjection" />
 
         <!--
             *******************************************************************
@@ -116,7 +119,7 @@
             android:name=".view.overlay.SubtitleOverlayService"
             android:exported="false"
             android:configChanges="orientation|screenSize"
-            android:foregroundServiceType="mediaProjection|mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback" />
 
         <!--
             *******************************************************************
@@ -131,7 +134,7 @@
             android:name=".view.overlay.FloatingToggleButtonService"
             android:exported="false"
             android:configChanges="orientation|screenSize"
-            android:foregroundServiceType="mediaProjection|mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback" />
 
     </application>
 
