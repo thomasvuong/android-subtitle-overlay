@@ -92,8 +92,8 @@ android {
         resources {
             excludes += ['META-INF/AL2.0', 'META-INF/LGPL2.1', 'META-INF/LICENSE', 'META-INF/NOTICE']
             excludes += ['META-INF/licenses/ASM']
-
         }
+        jniLibs { pickFirsts += ['**/libonnxruntime.so'] }
     }
 
 }
@@ -114,6 +114,7 @@ dependencies {
 
     // Vosk library for on-device speech recognition
     implementation "com.alphacephei:vosk-android:0.3.47"
+    implementation files('libs/sherpa-onnx-2.0.1.aar'); implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.20'
 
     // Microsoft ONNX runtime for running AI models on Android
     implementation "com.microsoft.onnxruntime:onnxruntime-android:1.22.0"

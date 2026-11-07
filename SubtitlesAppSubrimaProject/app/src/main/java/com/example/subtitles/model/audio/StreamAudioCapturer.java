@@ -44,7 +44,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class StreamAudioCapturer {
     /** Duration of one audio chunk in milliseconds */
-    public static final int chunkSizeMs = 250;
+    public static final int chunkSizeMs = 100;
     private static final String TAG = "StreamAudioCapturer";
     /** SharedPreferences file and key selecting the audio source */
     public static final String PREFS_NAME = "subrima_prefs";

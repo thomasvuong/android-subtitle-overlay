@@ -160,7 +160,7 @@ public class VoskStreamTranscriber {
         try {
             //speakerChange = new SpeakerChangeDetector(context);
             speakerChange = SpeakerChangeDetector.getInstance(context);
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
             Log.e(TAG, "SpeakerChangeDetector initialization FAILED. Disabled.", e);
             speakerChange = null; 
         }

@@ -14,6 +14,7 @@ import com.example.subtitles.model.transcription.core.TaggedAudioChunk;
 import com.example.subtitles.model.transcription.correction.transcriptSegment;
 import com.example.subtitles.model.transcription.correction.Dictionary;
 import com.example.subtitles.model.transcription.core.VoskStreamTranscriber;
+import com.example.subtitles.model.transcription.core.SherpaStreamTranscriber;
 import com.example.subtitles.model.transcription.core.LanguageModelManager;
 import com.example.subtitles.model.transcription.correction.whisper.WhisperTranscriber;
 
@@ -61,6 +62,7 @@ public class transcriptManager {
     private final JSONObject googleLangMap;
     /// Vosk-based transcription engine
     private final VoskStreamTranscriber transcriber;
+    private final SherpaStreamTranscriber sherpa;
 
     /// Lock for synchronizing access to Vosk transcription history
     private final Object lockVoskHistory = new Object();
@@ -110,11 +112,12 @@ public class transcriptManager {
         this.srcLang = srcL;
         // Initialize Vosk transcription engine
         this.transcriber = VoskStreamTranscriber.getInstance(context);
+        this.sherpa = SherpaStreamTranscriber.getInstance(context);
         // Initialize language identification detector
         SileroLanguageDetector tempDetector = null;
         try {
             tempDetector = new SileroLanguageDetector(context, sampleRate);
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
             Log.e(TAG, "LID initialization failed", e);
             notifyError("LID initialization Error: " + e.getMessage());
         }
@@ -129,7 +132,7 @@ public class transcriptManager {
                     // Wrap captured audio chunk into TaggedAudioChunk
                     TaggedAudioChunk chunk = new TaggedAudioChunk(Arrays.copyOf(pcm, length), (long) chunckCounter * StreamAudioCapturer.chunkSizeMs);
                     // Detect language using LID if enabled
-                    if (lidDetector != null && statusSrcLangDetected) {
+                    if (lidDetector != null && statusSrcLangDetected && !"vi".equals(srcLang)) {
                         String detected = lidDetector.acceptChunk(chunk.getFloatAudio(), srcLang);
                         if (!detected.isEmpty() && (!detected.equals(srcLang) || !langInitialized)) {
                             langInitialized = true;
@@ -143,7 +146,7 @@ public class transcriptManager {
                     }
 
                     // Pass audio chunk to Vosk transcription engine
-                    transcriber.acceptAudio(chunk);
+                    if ("vi".equals(srcLang)) sherpa.acceptAudio(chunk); else transcriber.acceptAudio(chunk);
 
                     // Append to WhisperTranscriber if smart correction enabled
                     if (whisperT != null && whisperCorrection) {
@@ -164,7 +167,7 @@ public class transcriptManager {
 
 
         // Set Vosk transcription listener
-        this.transcriber.setListener(new VoskStreamTranscriber.Listener() {
+        VoskStreamTranscriber.Listener asrListener = new VoskStreamTranscriber.Listener() {
             @Override
             public void onTranscriptionUpdate(String lastSourceSentence, String fullText) {
                 // Apply dictionary-based correction if enabled
@@ -202,7 +205,7 @@ public class transcriptManager {
                     if (listener != null) listener.onModelTranscriptChange(srcLang);
                 }
             }
-        });
+        }; this.transcriber.setListener(asrListener); this.sherpa.setListener(asrListener);
     }
 
     /**
@@ -311,7 +314,7 @@ public class transcriptManager {
             if (LanguageModelManager.getInstance(context).isLanguageSupported(newLang)) {
                 if (listener != null) listener.onLanguageChange(newLang);
                 if (whisperCorrection) dictionary.clear();
-                transcriber.switchLanguageAsync(newLang);
+                startEngine(newLang);
             } else {
                 Log.i(TAG, "problem: it seems that vosk dont support this lang");
             }
@@ -382,7 +385,7 @@ public class transcriptManager {
             return false;
         }
         setParmeters();
-        transcriber.switchLanguageAsync(srcLang);
+        startEngine(srcLang);
         boolean started = capturer.start();
         if (!started) {
             stop();
@@ -401,6 +404,7 @@ public class transcriptManager {
 
         capturer.stop(false);
         transcriber.stop();
+        sherpa.stop();
         if (srcLang.isEmpty()) {
             srcLang = "en";
         }
@@ -422,6 +426,7 @@ public class transcriptManager {
     /**
      * Cleans up all resources and stops the pipeline completely
      */
+    private void startEngine(String lang) { if ("vi".equals(lang)) { transcriber.stop(); sherpa.switchLanguageAsync(lang); } else { sherpa.stop(); transcriber.switchLanguageAsync(lang); } }
     public synchronized void close() {
         stop();
         StreamAudioCapturer.destroyInstance();
@@ -431,6 +436,7 @@ public class transcriptManager {
             Log.w(TAG, "Error closing LID", e);
         }
         transcriber.destroy();
+        sherpa.destroy();
         whisperT.close();
         Log.i(TAG, "Pipeline destroyed");
     }
