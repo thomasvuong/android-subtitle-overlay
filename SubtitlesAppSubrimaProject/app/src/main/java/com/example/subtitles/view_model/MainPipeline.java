@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class MainPipeline {
     /// Maximum number of words shown in subtitles at a time
-    public static final int MAX_SUBTITLES_WORDS = 14;
+    public static final int MAX_SUBTITLES_WORDS = 10;
 
     /// Logging tag
     private static final String TAG = "MainPipeline";
