@@ -1,4 +1,5 @@
 # SUBRIMA (Android Subtitle Overlay)
+> **Bản tiếng Việt (vi-live-captions), sửa đổi từ [y-haviv/android-subtitle-overlay](https://github.com/y-haviv/android-subtitle-overlay) ngày 2026-11-07, GPLv3.** Thêm phụ đề tiếng Việt trực tiếp bằng [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) và mô hình [hynt/Zipformer-30M-RNNT-6000h](https://huggingface.co/hynt/Zipformer-30M-RNNT-6000h) (giấy phép CC BY-NC-ND 4.0: chỉ dùng phi thương mại, giữ nguyên mô hình). Tải APK ở mục [Releases](../../releases).
 
 SUBRIMA is an Android app that captures device playback audio, transcribes speech in near real time, optionally translates it, and renders subtitles as a floating overlay above other apps.
 
