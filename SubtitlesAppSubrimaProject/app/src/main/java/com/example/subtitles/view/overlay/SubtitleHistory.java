@@ -38,22 +38,47 @@ public class SubtitleHistory {
         return items.isEmpty() ? "" : items.getLast();
     }
 
-    /**
-     * Removes from the start of {@code live} the longest run of words that is also
-     * a suffix of {@code lastHistoryLine} (word-level, case-insensitive).
-     */
+    /** Number of most recent history lines compared against the live text. */
+    public static final int OVERLAP_LINES = 3;
+
+    /** Single-line variant kept for compatibility; delegates to {@link #liveRemainderAgainst}. */
     public static String liveRemainder(String lastHistoryLine, String live) {
+        if (lastHistoryLine == null) return live == null ? "" : live;
+        return liveRemainderAgainst(Collections.singletonList(lastHistoryLine), live);
+    }
+
+    private static String normWord(String w) {
+        return w.replaceAll("[.,!?\u2026;:]", "").toLowerCase();
+    }
+
+    /**
+     * Removes from the start of {@code live} the longest run of words that is also a suffix of the
+     * last {@link #OVERLAP_LINES} history lines joined with spaces (word-level, case-insensitive,
+     * punctuation .,!?... ignored). Returns the remaining words (original spelling) joined by a space,
+     * or {@code live} unchanged when nothing overlaps.
+     */
+    public static String liveRemainderAgainst(List<String> historyLines, String live) {
         if (live == null) return "";
-        if (lastHistoryLine == null || lastHistoryLine.trim().isEmpty()) return live;
-        String[] h = lastHistoryLine.trim().split("\\s+");
         String trimmedLive = live.trim();
-        if (trimmedLive.isEmpty()) return live;
+        if (historyLines == null || historyLines.isEmpty() || trimmedLive.isEmpty()) return live;
+        int from = Math.max(0, historyLines.size() - OVERLAP_LINES);
+        StringBuilder joined = new StringBuilder();
+        for (int i = from; i < historyLines.size(); i++) {
+            String line = historyLines.get(i);
+            if (line == null || line.trim().isEmpty()) continue;
+            if (joined.length() > 0) joined.append(' ');
+            joined.append(line.trim());
+        }
+        if (joined.length() == 0) return live;
+        String[] h = joined.toString().split("\\s+");
         String[] l = trimmedLive.split("\\s+");
         int max = Math.min(h.length, l.length);
         for (int n = max; n >= 1; n--) {
             boolean match = true;
             for (int i = 0; i < n; i++) {
-                if (!h[h.length - n + i].equalsIgnoreCase(l[i])) {
+                String a = normWord(h[h.length - n + i]);
+                String b = normWord(l[i]);
+                if (a.isEmpty() || !a.equals(b)) {
                     match = false;
                     break;
                 }

@@ -46,7 +46,7 @@
         -->
         <LinearLayout
             android:id="@+id/dragHandle"
-            android:layout_width="20dp"
+            android:layout_width="28dp"
             android:layout_height="60dp"
             android:layout_marginStart="8dp"
             android:orientation="vertical"
@@ -110,6 +110,20 @@
             app:showText="false"
             android:text=""
             android:textSize="16sp" />
+
+        <!-- Close the whole app (stops everything, removes this button) -->
+        <TextView
+            android:id="@+id/closeApp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginEnd="4dp"
+            android:gravity="center"
+            android:text="✕"
+            android:textColor="#B71C1C"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:contentDescription="@string/floating_close"
+            android:background="?android:attr/selectableItemBackgroundBorderless" />
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

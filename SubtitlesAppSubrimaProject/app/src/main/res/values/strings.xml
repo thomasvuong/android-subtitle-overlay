@@ -26,4 +26,7 @@
     <string name="overlay_expand">⤢ Xem lại</string>
     <string name="overlay_collapse">✕ Thu nhỏ</string>
     <string name="overlay_clear">Xoá</string>
+    <string name="overlay_off">⏻ Tắt</string>
+    <string name="author_name">Vuong Dao Nghe</string>
+    <string name="floating_close">Đóng ứng dụng</string>
 </resources>

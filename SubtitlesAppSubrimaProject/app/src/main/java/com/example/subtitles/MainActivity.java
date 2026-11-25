@@ -165,6 +165,19 @@ public class MainActivity extends AppCompatActivity {
     };
 
 
+    /** Floating "✕" asked to quit: stop everything started from here and close the task. */
+    private final BroadcastReceiver quitReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Log.d(TAG, "Received ACTION_QUIT_APP, finishing");
+            synchronized (lock) {
+                stopSecoundryButton();
+                stopTranscription();
+            }
+            finishAndRemoveTask();
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -181,6 +194,9 @@ public class MainActivity extends AppCompatActivity {
 
         LocalBroadcastManager.getInstance(this).registerReceiver(toggleServiceReadyReceiver,
                 new IntentFilter("com.example.subtitles.ACTION_TOGGLE_SERVICE_READY"));
+
+        LocalBroadcastManager.getInstance(this).registerReceiver(quitReceiver,
+                new IntentFilter(FloatingToggleButtonService.ACTION_QUIT_APP));
 
         // Request audio recording permission if not granted
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
@@ -698,9 +714,11 @@ public class MainActivity extends AppCompatActivity {
         // Stop overlay services
         stopService(new Intent(this, FloatingToggleButtonService.class));
         stopService(new Intent(this, AudioCaptureService.class));
+        stopService(new Intent(this, SubtitleOverlayService.class));
         // Unregister broadcast receivers
         LocalBroadcastManager.getInstance(this).unregisterReceiver(serviceReadyReceiver);
         LocalBroadcastManager.getInstance(this).unregisterReceiver(toggleServiceReadyReceiver);
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(quitReceiver);
         // Destroy pipeline resources
         if (pipeline != null) pipeline.destroy();
     }

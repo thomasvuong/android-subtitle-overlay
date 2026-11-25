@@ -67,6 +67,12 @@ public class FloatingToggleButtonService extends Service {
     // Listener interface for toggle state changes
     private OnToggleListener toggleListener;
 
+    // Broadcast (LocalBroadcastManager) asking MainActivity to stop everything and finish
+    public static final String ACTION_QUIT_APP = "com.example.subtitles.ACTION_QUIT_APP";
+    private static final int DRAG_SLOP_DP = 10;
+    private int screenWidth;
+    private SwitchCompat toggleSwitch;
+
     /**
      * Registers a listener to be notified when the toggle button is changed.
      * Can be called from any component with a reference to the service.
@@ -90,6 +96,43 @@ public class FloatingToggleButtonService extends Service {
     public static void hideOverlay() {
         if (instance != null) instance.handler.post(() -> instance.setOverlayVisible(false));
     }
+    /**
+     * Turns the subtitles off exactly like the user flipping the floating switch off
+     * (hides the overlay and notifies the listener, which stops transcription).
+     * Used by the "Tắt" button inside the subtitle overlay.
+     */
+    public static void turnOff() {
+        final FloatingToggleButtonService svc = instance;
+        if (svc == null) {
+            SubtitleOverlayService.hideOverlay();
+            return;
+        }
+        svc.handler.post(() -> {
+            if (svc.toggleSwitch.isChecked()) {
+                svc.toggleSwitch.setChecked(false); // runs the normal listener path
+            } else {
+                svc.subtitlesOn = false;
+                if (svc.toggleListener != null) svc.toggleListener.onToggle(false);
+                SubtitleOverlayService.hideOverlay();
+            }
+        });
+    }
+
+    /**
+     * Quits the whole app: stops transcription (via the toggle listener), hides and stops the
+     * subtitle overlay and audio capture services, asks MainActivity to finish, then stops itself.
+     */
+    private void quitApp() {
+        subtitlesOn = false;
+        if (toggleListener != null) toggleListener.onToggle(false);
+        SubtitleOverlayService.hideOverlay();
+        LocalBroadcastManager.getInstance(this).sendBroadcast(new Intent(ACTION_QUIT_APP));
+        stopService(new Intent(this, SubtitleOverlayService.class));
+        stopService(new Intent(this, com.example.subtitles.model.audio.AudioCaptureService.class));
+        stopForeground(true);
+        stopSelf();
+    }
+
     /**
      * Adds or removes the floating overlay view to/from the WindowManager.
      *
@@ -132,6 +175,7 @@ public class FloatingToggleButtonService extends Service {
         // Compute screen height and margin for clamping overlay
         DisplayMetrics dm = getResources().getDisplayMetrics();
         screenHeight = dm.heightPixels;
+        screenWidth = dm.widthPixels;
 
         marginPx = (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 24, dm);
@@ -139,6 +183,8 @@ public class FloatingToggleButtonService extends Service {
 
         // Initialize switch toggle and listener
         SwitchCompat toggle = floatingButton.findViewById(R.id.toggleSwitch);
+        toggleSwitch = toggle;
+        floatingButton.findViewById(R.id.closeApp).setOnClickListener(v -> quitApp());
         toggle.setChecked(subtitlesOn);
         toggle.setOnCheckedChangeListener((btn, isChecked) -> {
             subtitlesOn = isChecked;
@@ -173,7 +219,7 @@ public class FloatingToggleButtonService extends Service {
 
         // Attach vertical drag behavior to handle view
         View handle = floatingButton.findViewById(R.id.dragHandle);
-        makeDraggableVertical(handle, params);
+        makeDraggable(handle, params);
 
         // Broadcast that service is ready
         Intent ready = new Intent("com.example.subtitles.ACTION_TOGGLE_SERVICE_READY");
@@ -181,25 +227,43 @@ public class FloatingToggleButtonService extends Service {
     }
 
     /**
-     * Enables vertical dragging of the floating button within screen bounds.
-     *
-     * @param view view to attach drag listener
-     * @param p    layout params to update during drag
+     * Enables free (X and Y) dragging of the floating button within screen bounds.
+     * Movement under a ~10dp slop is treated as a tap and ignored.
      */
-    private void makeDraggableVertical(View view,
-                                       WindowManager.LayoutParams p) {
+    private void makeDraggable(View view, WindowManager.LayoutParams p) {
+        final int slop = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
+                DRAG_SLOP_DP, getResources().getDisplayMetrics());
+        final float[] down = new float[4]; // rawX, rawY, startParamX, startParamY
+        final boolean[] dragging = new boolean[1];
         view.setOnTouchListener((v, event) -> {
-            if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                // Calculate new Y position centered on touch
-                int newY = (int) (event.getRawY() - v.getHeight() / 2);
-                // Clamp to screen height with margins
-                p.y = Math.max(marginPx,
-                        Math.min(newY,
-                                screenHeight - floatingButton.getHeight() - marginPx));
-                // Update overlay position
-                windowManager.updateViewLayout(floatingButton, p);
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    down[0] = event.getRawX();
+                    down[1] = event.getRawY();
+                    down[2] = p.x;
+                    down[3] = p.y;
+                    dragging[0] = false;
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    float dx = event.getRawX() - down[0];
+                    float dy = event.getRawY() - down[1];
+                    if (!dragging[0] && Math.hypot(dx, dy) < slop) return true;
+                    dragging[0] = true;
+                    int w = floatingButton.getWidth();
+                    int h = floatingButton.getHeight();
+                    p.x = Math.max(0, Math.min((int) (down[2] + dx), screenWidth - w));
+                    p.y = Math.max(0, Math.min((int) (down[3] + dy), screenHeight - h));
+                    if (floatingButton.getParent() != null) {
+                        try {
+                            windowManager.updateViewLayout(floatingButton, p);
+                        } catch (IllegalArgumentException e) {
+                            Log.w(TAG, "drag: view not attached", e);
+                        }
+                    }
+                    return true;
+                default:
+                    return true;
             }
-            return true; // consume touch events
         });
     }
     /**
@@ -248,6 +312,7 @@ public class FloatingToggleButtonService extends Service {
 
         DisplayMetrics dm = getResources().getDisplayMetrics();
         screenHeight = dm.heightPixels;
+        screenWidth = dm.widthPixels;
 
         if (newConfig.orientation ==
                 android.content.res.Configuration.ORIENTATION_LANDSCAPE) {

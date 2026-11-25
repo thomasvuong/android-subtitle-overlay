@@ -55,6 +55,19 @@
                 android:backgroundTint="#333333"
                 android:visibility="gone"
                 android:text="@string/overlay_clear" />
+
+            <Button
+                android:id="@+id/overlay_btn_off"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minHeight="48dp"
+                android:minWidth="48dp"
+                android:textSize="18sp"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#B71C1C"
+                android:text="@string/overlay_off" />
         </LinearLayout>
 
         <ScrollView

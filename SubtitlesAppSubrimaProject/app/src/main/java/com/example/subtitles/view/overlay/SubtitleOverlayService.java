@@ -19,6 +19,10 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.graphics.Typeface;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.widget.Button;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -60,6 +64,9 @@ public class SubtitleOverlayService extends Service {
     private View headerRow;
     private Button btnToggle;
     private Button btnClear;
+    private Button btnOff;
+    private static final int HISTORY_COLOR = 0xFFE0E0E0;
+    private static final int LIVE_COLOR = 0xFF64B5F6;
     private ScrollView historyScroll;
     private TextView historyText;
     private final SubtitleHistory history = new SubtitleHistory();
@@ -144,20 +151,40 @@ public class SubtitleOverlayService extends Service {
 
     private void refreshHistory() {
         boolean stick = isNearBottom();
-        historyText.setText(history.joined().replace("\n", "\n\n"));
+        renderHistory(stick);
+    }
+
+    /** Finalized lines in grey, then the in-progress remainder (blue, bold) as the last paragraph. */
+    private void renderHistory(boolean stick) {
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        sb.append(history.joined().replace("\n", "\n\n"));
+        sb.setSpan(new ForegroundColorSpan(HISTORY_COLOR), 0, sb.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        String rest = liveText == null ? "" : liveText;
+        rest = SubtitleHistory.liveRemainderAgainst(history.lines(), rest).trim();
+        if (!rest.isEmpty()) {
+            if (sb.length() > 0) sb.append("\n\n");
+            int start = sb.length();
+            sb.append((isRTL(rest) ? RLE : LRE) + rest + PDF);
+            sb.setSpan(new ForegroundColorSpan(LIVE_COLOR), start, sb.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sb.setSpan(new StyleSpan(Typeface.BOLD), start, sb.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        historyText.setText(sb);
         if (stick) {
             historyScroll.post(() -> historyScroll.fullScroll(View.FOCUS_DOWN));
         }
     }
 
     private void renderLive() {
-        String shown = liveText == null ? "" : liveText;
         if (expanded) {
-            shown = SubtitleHistory.liveRemainder(history.last(), shown);
-            overlayText.setVisibility(shown.isEmpty() ? View.GONE : View.VISIBLE);
-        } else {
-            overlayText.setVisibility(View.VISIBLE);
+            overlayText.setVisibility(View.GONE);
+            refreshHistory(); // the live remainder is the blue last paragraph of the history
+            return;
         }
+        String shown = liveText == null ? "" : liveText;
+        overlayText.setVisibility(View.VISIBLE);
         String wrapped = (isRTL(shown) ? RLE : LRE) + shown + PDF;
         try {
             overlayText.setText(wrapped);
@@ -304,6 +331,7 @@ public class SubtitleOverlayService extends Service {
                 if (overlayView.getParent() == null) {
                     windowManager.addView(overlayView, params);
                 }
+                setExpanded(true); // default: full-screen history view
             } else {
                 setExpanded(false); // turning off minimises the dialog
                 if (overlayView.getParent() != null) {
@@ -335,9 +363,11 @@ public class SubtitleOverlayService extends Service {
         headerRow = overlayView.findViewById(R.id.overlay_header);
         btnToggle = overlayView.findViewById(R.id.overlay_btn_toggle);
         btnClear = overlayView.findViewById(R.id.overlay_btn_clear);
+        btnOff = overlayView.findViewById(R.id.overlay_btn_off);
         historyScroll = overlayView.findViewById(R.id.overlay_history_scroll);
         historyText = overlayView.findViewById(R.id.overlay_history);
         basePaddingPx = overlayRoot.getPaddingLeft();
+        btnOff.setOnClickListener(v -> FloatingToggleButtonService.turnOff());
         btnToggle.setOnClickListener(v -> setExpanded(!expanded));
         btnClear.setOnClickListener(v -> {
             history.clear();

@@ -67,6 +67,20 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:layout_marginTop="12dp" />
 
+    <!-- Author name directly under the title image -->
+    <TextView
+        android:id="@+id/authorName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="@string/author_name"
+        android:textColor="#B0BEC5"
+        android:textSize="18sp"
+        app:layout_constraintTop_toBottomOf="@+id/titleImage"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="4dp" />
+
     <!--
         ********************************************************************
         Main Toggle Button (Center)

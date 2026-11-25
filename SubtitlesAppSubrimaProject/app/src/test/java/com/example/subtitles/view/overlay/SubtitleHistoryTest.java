@@ -3,6 +3,8 @@ package com.example.subtitles.view.overlay;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.util.Arrays;
+import java.util.Collections;
 import org.junit.Test;
 
 public class SubtitleHistoryTest {
@@ -46,5 +48,34 @@ public class SubtitleHistoryTest {
         h.append("a");
         h.append("b");
         assertEquals("a\nb", h.joined());
+    }
+
+    @Test
+    public void overlapSpansTwoLines() {
+        assertEquals("f", SubtitleHistory.liveRemainderAgainst(
+                Arrays.asList("a b c", "d e"), "c d e f"));
+    }
+
+    @Test
+    public void overlapFullGivesEmpty() {
+        assertEquals("", SubtitleHistory.liveRemainderAgainst(
+                Arrays.asList("a b c", "d e"), "b c, d e."));
+    }
+
+    @Test
+    public void overlapNoneUnchanged() {
+        assertEquals("x y", SubtitleHistory.liveRemainderAgainst(
+                Arrays.asList("a b c", "d e"), "x y"));
+    }
+
+    @Test
+    public void overlapEmptyHistoryReturnsLive() {
+        assertEquals("x y", SubtitleHistory.liveRemainderAgainst(Collections.<String>emptyList(), "x y"));
+    }
+
+    @Test
+    public void overlapIgnoresCaseAndPunctuation() {
+        assertEquals("anh", SubtitleHistory.liveRemainderAgainst(
+                Arrays.asList("Hôm nay trời đẹp."), "TRỜI ĐẸP anh"));
     }
 }
