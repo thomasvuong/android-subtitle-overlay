@@ -18,7 +18,9 @@ import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
-import android.widget.FrameLayout;
+import android.graphics.Typeface;
+import android.widget.Button;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -54,6 +56,19 @@ public class SubtitleOverlayService extends Service {
     private WindowManager windowManager;
     private View overlayView;
     private TextView overlayText;
+    private View overlayRoot;
+    private View headerRow;
+    private Button btnToggle;
+    private Button btnClear;
+    private ScrollView historyScroll;
+    private TextView historyText;
+    private final SubtitleHistory history = new SubtitleHistory();
+    private boolean expanded = false;
+    private String liveText = "";
+    private int compactY;
+    private int basePaddingPx;
+    private static final int EXPANDED_BOTTOM_RESERVE_DP = 150;
+    private static final int NEAR_BOTTOM_DP = 48;
     private WindowManager.LayoutParams params;
     // Subtitle update state
     private boolean waitingTochange = false;
@@ -98,6 +113,113 @@ public class SubtitleOverlayService extends Service {
             instance.handler.post(() -> instance.handleTextUpdate(text));
         }
     }
+    /**
+     * Appends a finalized sentence to the on-screen history (no-op when service is not running).
+     */
+    public static void appendHistory(String sentence) {
+        if (sentence == null || sentence.trim().isEmpty()) return;
+        final SubtitleOverlayService svc = instance;
+        if (svc != null) {
+            svc.handler.post(() -> svc.addHistory(sentence));
+        }
+    }
+
+    private void addHistory(String sentence) {
+        history.append(sentence);
+        refreshHistory();
+        renderLive();
+    }
+
+    private int dp(int v) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v,
+                getResources().getDisplayMetrics());
+    }
+
+    private boolean isNearBottom() {
+        View child = historyScroll.getChildAt(0);
+        if (child == null) return true;
+        int diff = child.getBottom() - (historyScroll.getScrollY() + historyScroll.getHeight());
+        return diff <= dp(NEAR_BOTTOM_DP);
+    }
+
+    private void refreshHistory() {
+        boolean stick = isNearBottom();
+        historyText.setText(history.joined().replace("\n", "\n\n"));
+        if (stick) {
+            historyScroll.post(() -> historyScroll.fullScroll(View.FOCUS_DOWN));
+        }
+    }
+
+    private void renderLive() {
+        String shown = liveText == null ? "" : liveText;
+        if (expanded) {
+            shown = SubtitleHistory.liveRemainder(history.last(), shown);
+            overlayText.setVisibility(shown.isEmpty() ? View.GONE : View.VISIBLE);
+        } else {
+            overlayText.setVisibility(View.VISIBLE);
+        }
+        String wrapped = (isRTL(shown) ? RLE : LRE) + shown + PDF;
+        try {
+            overlayText.setText(wrapped);
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG, "Could not set overlay text", e);
+        }
+    }
+
+    private int statusBarHeight() {
+        int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        return id > 0 ? getResources().getDimensionPixelSize(id) : 0;
+    }
+
+    private void pushLayout() {
+        if (overlayView.getParent() != null) {
+            try {
+                windowManager.updateViewLayout(overlayView, params);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "Subtitle view not attached, skipping updateLayout()", e);
+            }
+        }
+    }
+
+    private void applyExpandedGeometry() {
+        params.width = WindowManager.LayoutParams.MATCH_PARENT;
+        params.height = Math.max(dp(200), screenHeight - dp(EXPANDED_BOTTOM_RESERVE_DP));
+        params.y = 0;
+    }
+
+    private void setExpanded(boolean value) {
+        if (value == expanded) return;
+        if (value) {
+            compactY = params.y;
+            expanded = true;
+            applyExpandedGeometry();
+            overlayRoot.setPadding(basePaddingPx, basePaddingPx + statusBarHeight(),
+                    basePaddingPx, basePaddingPx);
+            historyScroll.setVisibility(View.VISIBLE);
+            btnClear.setVisibility(View.VISIBLE);
+            btnToggle.setText(R.string.overlay_collapse);
+            overlayText.setTypeface(Typeface.DEFAULT_BOLD);
+            overlayText.setMaxLines(Integer.MAX_VALUE);
+            refreshHistory();
+            historyScroll.post(() -> historyScroll.fullScroll(View.FOCUS_DOWN));
+        } else {
+            expanded = false;
+            params.height = WindowManager.LayoutParams.WRAP_CONTENT;
+            boolean landscape = getResources().getConfiguration().orientation
+                    == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+            params.width = landscape ? screenWidth / 2 : WindowManager.LayoutParams.MATCH_PARENT;
+            params.y = compactY;
+            overlayRoot.setPadding(basePaddingPx, basePaddingPx, basePaddingPx, basePaddingPx);
+            historyScroll.setVisibility(View.GONE);
+            btnClear.setVisibility(View.GONE);
+            btnToggle.setText(R.string.overlay_expand);
+            overlayText.setTypeface(Typeface.DEFAULT);
+            overlayText.setMaxLines(4);
+        }
+        renderLive();
+        pushLayout();
+    }
+
     /**
      * Shows the overlay programmatically.
      */
@@ -145,16 +267,9 @@ public class SubtitleOverlayService extends Service {
             text = pendingText;
         }
 
-        boolean rtl = isRTL(text);
-
-        // Wrap with directional markers to enforce correct text direction
-        String wrapped = (rtl ? RLE : LRE) + text + PDF;
-
-        try {
-            overlayText.setText(wrapped);
-        } catch (IllegalArgumentException e) {
-            Log.w(TAG, "Tried to updateViewLayout but view not attached", e);
-        }
+        liveText = text;
+        // renderLive wraps the text with directional markers (RTL/LTR)
+        renderLive();
     }
 
     /**
@@ -190,6 +305,7 @@ public class SubtitleOverlayService extends Service {
                     windowManager.addView(overlayView, params);
                 }
             } else {
+                setExpanded(false); // turning off minimises the dialog
                 if (overlayView.getParent() != null) {
                     windowManager.removeViewImmediate(overlayView);
                 }
@@ -215,6 +331,19 @@ public class SubtitleOverlayService extends Service {
         overlayView = LayoutInflater.from(this)
                 .inflate(R.layout.overlay_layout, null);
         overlayText = overlayView.findViewById(R.id.overlay_text);
+        overlayRoot = overlayView.findViewById(R.id.overlay_root);
+        headerRow = overlayView.findViewById(R.id.overlay_header);
+        btnToggle = overlayView.findViewById(R.id.overlay_btn_toggle);
+        btnClear = overlayView.findViewById(R.id.overlay_btn_clear);
+        historyScroll = overlayView.findViewById(R.id.overlay_history_scroll);
+        historyText = overlayView.findViewById(R.id.overlay_history);
+        basePaddingPx = overlayRoot.getPaddingLeft();
+        btnToggle.setOnClickListener(v -> setExpanded(!expanded));
+        btnClear.setOnClickListener(v -> {
+            history.clear();
+            refreshHistory();
+            renderLive();
+        });
         String defaultText = getString(R.string.subtitle);
         overlayText.setText(defaultText);
 
@@ -243,12 +372,13 @@ public class SubtitleOverlayService extends Service {
                 PixelFormat.TRANSLUCENT
         );
         params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        int offsetDp = 200;
+        int offsetDp = 320; // below the floating on/off toggle so it stays reachable
         initialOffsetPx = (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, offsetDp, dm);
         params.y = initialOffsetPx;
-        // Attach vertical drag behavior
-        makeDraggableVertical(overlayView, params, dm);
+        compactY = initialOffsetPx;
+        // Attach vertical drag behavior to the header row only
+        makeDraggableVertical(headerRow, params, dm);
     }
 
     /**
@@ -262,12 +392,15 @@ public class SubtitleOverlayService extends Service {
                                        WindowManager.LayoutParams p,
                                        DisplayMetrics dm) {
         view.setOnTouchListener((v, event) -> {
+            if (expanded) return false;
             if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                int newY = (int) (event.getRawY() - v.getHeight() / 2);
+                int h = overlayView.getHeight();
+                int newY = (int) (event.getRawY() - h / 2);
                 p.y = Math.max(marginPx,
                         Math.min(newY,
-                                screenHeight - v.getHeight() - marginPx));
-                windowManager.updateViewLayout(view, p);
+                                screenHeight - h - marginPx));
+                compactY = p.y;
+                pushLayout();
             }
             return true;
         });
@@ -312,6 +445,14 @@ public class SubtitleOverlayService extends Service {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         screenWidth = dm.widthPixels;
         screenHeight = dm.heightPixels;
+
+        if (expanded) {
+            applyExpandedGeometry();
+            overlayRoot.setPadding(basePaddingPx, basePaddingPx + statusBarHeight(),
+                    basePaddingPx, basePaddingPx);
+            pushLayout();
+            return;
+        }
 
         if (newConfig.orientation ==
                 android.content.res.Configuration.ORIENTATION_LANDSCAPE) {

@@ -23,4 +23,7 @@
 
     <string name="help_default_text">No help text available for this language.</string>
 
+    <string name="overlay_expand">⤢ Xem lại</string>
+    <string name="overlay_collapse">✕ Thu nhỏ</string>
+    <string name="overlay_clear">Xoá</string>
 </resources>

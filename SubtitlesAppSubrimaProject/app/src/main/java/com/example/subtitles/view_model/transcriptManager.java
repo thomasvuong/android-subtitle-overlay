@@ -182,6 +182,14 @@ public class transcriptManager {
 
             @Override
             public void onFinalResult(transcriptSegment seg) {
+                // Keep finalized sentences in the overlay's scroll-back history
+                if (seg != null && seg.getSentence() != null) {
+                    String histText = seg.getSentence();
+                    if (whisperCorrection) {
+                        histText = dictionary.getCorrection(srcLang, histText);
+                    }
+                    com.example.subtitles.view.overlay.SubtitleOverlayService.appendHistory(histText);
+                }
                 // Only relevant when Whisper-based correction is enabled
                 if (!whisperCorrection) return;
                 if (resetVoskHistory) {
