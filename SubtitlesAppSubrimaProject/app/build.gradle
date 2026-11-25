@@ -39,25 +39,12 @@ android {
             abiFilters 'arm64-v8a' // Target architectures
             version "26.1.10909125" // NDK version
         }
-        // Configure external native builds using CMake
-        externalNativeBuild {
-            cmake {
-                abiFilters 'arm64-v8a' // Target ABIs
-                arguments "-DCMAKE_BUILD_TYPE=Release" // Ensures optimized release build
-            }
-        }
 
     }
     // ----------------------------------------------------------------------------
     // External Native Build
     // ----------------------------------------------------------------------------
     // Specifies the CMake build script path and version for compiling native code.
-    externalNativeBuild {
-        cmake {
-            version "3.22.1"                                // CMake version used for native build
-            path "src/main/jni/CMakeLists.txt"             // Path to the native CMakeLists.txt
-        }
-    }
     // ----------------------------------------------------------------------------
     // Build Types
     // ----------------------------------------------------------------------------
@@ -93,7 +80,7 @@ android {
             excludes += ['META-INF/AL2.0', 'META-INF/LGPL2.1', 'META-INF/LICENSE', 'META-INF/NOTICE']
             excludes += ['META-INF/licenses/ASM']
         }
-        jniLibs { pickFirsts += ['**/libonnxruntime.so'] }
+        jniLibs { pickFirsts += ['**/libonnxruntime.so']; useLegacyPackaging = true } // compress .so files to shrink the APK
     }
 
 }
@@ -125,7 +112,6 @@ dependencies {
     // ML Kit Translation for on-device language translation
     implementation 'com.google.mlkit:translate:17.0.1'
     // Picovoice Falcon SDK for voice activity detection or wake word
-    implementation 'ai.picovoice:falcon-android:1.0.2'
     // JTransforms for fast Fourier transform operations
     implementation 'com.github.wendykierp:JTransforms:3.1'
 
